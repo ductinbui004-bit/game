@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Kỷ Nguyên Đồ Đá: Hoang Đảo Sinh Tồn - 3D Survival</title>
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+  <!-- 3D Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- Atmospheric Screen Vignette FX (Frost, Warmth, Underwater) -->
+  <div id="frost-overlay" class="screen-fx"></div>
+  <div id="warmth-overlay" class="screen-fx"></div>
+  <div id="underwater-overlay" class="screen-fx"></div>
+
+  <!-- Cinematic Rescue Cutscene Overlay & Banner -->
+  <div id="cutscene-container" style="display: none;">
+    <div id="cutscene-banner">
+      <div id="cutscene-badge">🚢 TÍN HIỆU CỨU HỘ ĐÃ PHÁT</div>
+      <div id="cutscene-title">TÀU CỨU HỘ ĐÃ CẬP BẾN!</div>
+      <div id="cutscene-desc">Ánh đèn pha rẽ sóng vượt qua rạn san hô đưa bạn trở về nền văn minh!</div>
+    </div>
+    <button id="btn-skip-cutscene" class="hud-btn" title="Bỏ qua cắt cảnh">BỎ QUA ▶</button>
+  </div>
+
+  <!-- HUD Overlay -->
+  <div id="hud-overlay" style="display: none;">
+    <!-- Top Bar -->
+    <div id="top-bar">
+      <!-- Objectives / Quests (Top Left) -->
+      <div id="quests-container" class="glass-panel">
+        <div id="quests-header">
+          <span>📜 MỤC TIÊU SINH TỒN (Q)</span>
+          <span id="quests-toggle-icon">▲</span>
+        </div>
+        <div id="quest-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Compass (Top Center) -->
+      <div id="compass-container" class="glass-panel">
+        <div id="compass-tape">N • • • E • • • S • • • W</div>
+        <div id="shipwreck-dist-pill">
+          <span>🚢 Xác tàu đắm:</span>
+          <span id="shipwreck-dist-text">145m</span>
+        </div>
+      </div>
+
+      <!-- Clock, Minimap & Quick Action Buttons (Top Right) -->
+      <div id="top-right-wrap">
+        <div id="top-right-group">
+          <div id="clock-pill" class="glass-panel hud-pill">
+            <span id="day-badge">Ngày 1</span>
+            <span id="time-badge">12:00 ☀️</span>
+          </div>
+          <button id="btn-toggle-control-mode" class="hud-btn" title="Chuyển chế độ điều khiển: PC / Cảm ứng">📱</button>
+          <button id="btn-toggle-inventory" class="hud-btn" title="Túi đồ (Tab)">🎒</button>
+          <button id="btn-toggle-quests" class="hud-btn" title="Nhiệm vụ (Q)">📜</button>
+          <button id="btn-toggle-settings" class="hud-btn" title="Cài đặt (Esc)">⚙️</button>
+        </div>
+
+        <!-- Real-time Circular Radar Minimap -->
+        <div id="minimap-container" class="glass-panel">
+          <div id="minimap-header">
+            <span id="minimap-coords">X: 0 | Z: 25</span>
+            <span id="minimap-north">▲ BẮC</span>
+          </div>
+          <div id="minimap-canvas-wrap">
+            <canvas id="minimap-canvas" width="130" height="130"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center Dynamic Crosshair & Interaction Hint -->
+    <div id="center-crosshair-wrap">
+      <div id="crosshair"></div>
+      <div id="crosshair-hint">[E] Chặt Cây Cọ (100/100 HP)</div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+
+    <!-- Bottom Bar (Survival Bars & Hotbar) -->
+    <div id="bottom-bar">
+      <!-- 5 Survival Stat Bars (Bottom Left) -->
+      <div id="survival-stats" class="glass-panel" style="padding: 10px 14px;">
+        <!-- Health -->
+        <div class="stat-row">
+          <span class="stat-icon" title="Máu">🩸</span>
+          <div class="stat-bar-bg">
+            <div id="bar-health" class="stat-bar-fill health" style="width: 100%;"></div>
+          </div>
+          <span id="val-health" style="font-size: 11px; width: 28px; text-align: right;">100</span>
+        </div>
+        <!-- Stamina -->
+        <div class="stat-row">
+          <span class="stat-icon" title="Thể lực">⚡</span>
+          <div class="stat-bar-bg">
+            <div id="bar-stamina" class="stat-bar-fill stamina" style="width: 100%;"></div>
+          </div>
+          <span id="val-stamina" style="font-size: 11px; width: 28px; text-align: right;">100</span>
+        </div>
+        <!-- Food -->
+        <div class="stat-row">
+          <span class="stat-icon" title="Độ no">🍖</span>
+          <div class="stat-bar-bg">
+            <div id="bar-food" class="stat-bar-fill food" style="width: 100%;"></div>
+          </div>
+          <span id="val-food" style="font-size: 11px; width: 28px; text-align: right;">100</span>
+        </div>
+        <!-- Water -->
+        <div class="stat-row">
+          <span class="stat-icon" title="Nước uống">💧</span>
+          <div class="stat-bar-bg">
+            <div id="bar-water" class="stat-bar-fill water" style="width: 100%;"></div>
+          </div>
+          <span id="val-water" style="font-size: 11px; width: 28px; text-align: right;">100</span>
+        </div>
+        <!-- Oxygen (Underwater only) -->
+        <div class="stat-row" id="oxygen-row">
+          <span class="stat-icon" title="Dưỡng khí">🫁</span>
+          <div class="stat-bar-bg">
+            <div id="bar-oxygen" class="stat-bar-fill oxygen" style="width: 100%;"></div>
+          </div>
+          <span id="val-oxygen" style="font-size: 11px; width: 28px; text-align: right;">100</span>
+        </div>
+        <!-- Temperature status -->
+        <div id="temp-badge" class="temp-warm">🔥 Bình thường</div>
+      </div>
+
+      <!-- Hotbar 6 Slots (Bottom Center) -->
+      <div id="hotbar" class="glass-panel">
+        <!-- 6 slots populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Touch Controls Zones (Left: Joystick, Right: Look) -->
+  <div id="touch-zone-left"></div>
+  <div id="touch-zone-right"></div>
+
+  <!-- Virtual Joystick Graphic -->
+  <div id="joystick-base">
+    <div id="joystick-knob"></div>
+  </div>
+
+  <!-- Mobile Action Buttons (Bottom Right Cluster) -->
+  <div id="mobile-actions">
+    <div class="action-row">
+      <button id="btn-action-view" class="action-btn secondary" title="Đổi góc nhìn (V)">👁️</button>
+      <button id="btn-action-fish" class="action-btn secondary" title="Câu cá (F)">🎣</button>
+      <button id="btn-action-crouch" class="action-btn secondary" title="Ngồi rình (Ctrl)">🧎</button>
+      <button id="btn-action-jump" class="action-btn secondary" title="Nhảy / Bơi (Space)">🦘</button>
+    </div>
+    <div class="action-row">
+      <button id="btn-action-primary" class="action-btn primary" title="Chặt / Đập / Tấn công / Nhặt (E)">
+        <span id="mobile-action-icon">👊</span>
+        <span id="mobile-action-label">HÀNH ĐỘNG</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Start / Title Screen -->
+  <div id="screen-start" class="modal-overlay">
+    <div class="glass-panel start-card">
+      <h1 class="game-title">KỶ NGUYÊN ĐỒ ĐÁ</h1>
+      <p class="game-subtitle">HOANG ĐẢO SINH TỒN • PRIMITIVE ISLAND SURVIVAL</p>
+
+      <!-- 3D Character Preview & Gender Selection -->
+      <div class="char-select-section">
+        <canvas id="char-preview-canvas"></canvas>
+        <div style="display: flex; flex-direction: column; gap: 14px; text-align: left;">
+          <div style="font-size: 13px; font-weight: 700; color: #94a3b8;">CHỌN NHÂN VẬT SINH TỒN:</div>
+          <div class="gender-toggle">
+            <button id="gender-male-btn" class="gender-btn active">
+              <span>👨 Nam</span>
+              <span style="font-size: 11px; opacity: 0.8;">(Dũng Sĩ)</span>
+            </button>
+            <button id="gender-female-btn" class="gender-btn">
+              <span>👩 Nữ</span>
+              <span style="font-size: 11px; opacity: 0.8;">(Thợ Săn)</span>
+            </button>
+          </div>
+          <p style="font-size: 12px; color: #cbd5e1; max-width: 280px; line-height: 1.5;">
+            Trôi dạt vào hòn đảo hoang dã sau một cơn bão biển. Khai thác tài nguyên, chế tạo công cụ, đối đầu thú hoang và tìm cách sống sót để phát tín hiệu cứu hộ!
+          </p>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display: flex; gap: 14px; justify-content: center; margin-bottom: 20px;">
+        <button id="btn-start-game" class="btn-primary">▶ BẮT ĐẦU SINH TỒN</button>
+        <button id="btn-continue-game" class="btn-secondary" style="display: none;">💾 TIẾP TỤC</button>
+        <button id="btn-open-settings" class="btn-secondary">⚙️ CÀI ĐẶT</button>
+      </div>
+
+      <!-- Controls Guide Grid -->
+      <div class="controls-guide-grid">
+        <div class="guide-col">
+          <h4>🎮 ĐIỀU KHIỂN TRÊN PC</h4>
+          <div class="guide-row"><span>Di chuyển:</span> <span class="key-badge">W A S D</span></div>
+          <div class="guide-row"><span>Xoay góc nhìn:</span> <span class="key-badge">Chuột</span></div>
+          <div class="guide-row"><span>Tấn công / Đánh:</span> <span class="key-badge">Chuột Trái</span></div>
+          <div class="guide-row"><span>Chặt / Đập / Nhặt / Uống:</span> <span class="key-badge">E</span></div>
+          <div class="guide-row"><span>Chạy nhanh / Nhảy / Bơi:</span> <span class="key-badge">Shift / Space</span></div>
+          <div class="guide-row"><span>Túi đồ & Chế tạo:</span> <span class="key-badge">Tab</span></div>
+          <div class="guide-row"><span>Câu cá / Đổi góc nhìn:</span> <span class="key-badge">F / V</span></div>
+        </div>
+        <div class="guide-col">
+          <h4>📱 ĐIỀU KHIỂN MOBILE / CẢM ỨNG</h4>
+          <div class="guide-row"><span>Di chuyển 360°:</span> <span>Cần gạt ảo (Nửa trái)</span></div>
+          <div class="guide-row"><span>Chạy nhanh:</span> <span>Kéo cần gạt sát viền</span></div>
+          <div class="guide-row"><span>Xoay camera:</span> <span>Vuốt ngón tay (Nửa phải)</span></div>
+          <div class="guide-row"><span>Nút Hành Động Lớn:</span> <span>Tự đổi icon theo mục tiêu</span></div>
+          <div class="guide-row"><span>Cụm nút phụ:</span> <span>Nhảy 🦘 / Ngồi 🧎 / Câu 🎣 / Góc nhìn 👁️</span></div>
+          <div class="guide-row"><span>Thanh Hotbar 1-6:</span> <span>Chạm trực tiếp để trang bị</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inventory & Crafting Modal (Tab) -->
+  <div id="modal-inventory" class="modal-overlay" style="display: none;">
+    <div class="glass-panel inv-card">
+      <div class="inv-tabs">
+        <button id="tab-backpack" class="inv-tab-btn active">🎒 TÚI ĐỒ (24 Ô)</button>
+        <button id="tab-crafting" class="inv-tab-btn">🔨 CHẾ TẠO CÔNG CỤ</button>
+        <button id="btn-close-inventory" style="margin-left: auto; background: none; border: none; color: #fff; font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+
+      <!-- Backpack View -->
+      <div id="view-backpack" class="inv-layout">
+        <div>
+          <div style="font-size: 13px; font-weight: 700; color: #38bdf8; margin-bottom: 8px;">🔥 THANH HOTBAR (1-6)</div>
+          <div id="inv-grid-hotbar" class="inv-grid" style="margin-bottom: 16px;"></div>
+          <div style="font-size: 13px; font-weight: 700; color: #94a3b8; margin-bottom: 8px;">📦 BALO SINH TỒN (18 Ô)</div>
+          <div id="inv-grid-backpack" class="inv-grid"></div>
+        </div>
+
+        <!-- Selected Item Detail Panel -->
+        <div class="item-detail-panel">
+          <div id="item-detail-icon" style="font-size: 40px; text-align: center;">🎒</div>
+          <div id="item-detail-name" style="font-size: 16px; font-weight: 700; text-align: center;">Chọn một vật phẩm</div>
+          <div id="item-detail-desc" style="font-size: 13px; color: #94a3b8; line-height: 1.5; min-height: 60px;">Chạm hoặc click vào một ô vật phẩm để xem chi tiết hoặc sử dụng.</div>
+          <div style="display: flex; gap: 8px; margin-top: auto;">
+            <button id="btn-item-use" class="btn-primary" style="flex: 1; padding: 10px; font-size: 13px;" disabled>SỬ DỤNG / ĂN</button>
+            <button id="btn-item-build" class="btn-primary" style="flex: 1; padding: 10px; font-size: 13px; background: #059669; border-color: #10b981; display: none;">ĐẶT XUỐNG ĐẤT</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Crafting View -->
+      <div id="view-crafting" class="inv-layout" style="display: none;">
+        <div>
+          <div style="font-size: 13px; font-weight: 700; color: #38bdf8; margin-bottom: 12px;">DANH SÁCH CÔNG THỨC CHẾ TẠO</div>
+          <div id="crafting-recipe-list" class="recipe-list">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+        <div class="item-detail-panel">
+          <div id="craft-preview-icon" style="font-size: 40px; text-align: center;">🛠️</div>
+          <div id="craft-preview-name" style="font-size: 16px; font-weight: 700; text-align: center;">Chế tạo</div>
+          <div id="craft-preview-desc" style="font-size: 13px; color: #94a3b8; line-height: 1.5;">Chọn một công thức chế tạo từ danh sách bên trái.</div>
+          <div id="craft-preview-reqs" style="font-size: 12px; color: #f59e0b;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal (Esc) -->
+  <div id="modal-settings" class="modal-overlay" style="display: none;">
+    <div class="glass-panel settings-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="font-size: 18px; color: #38bdf8;">⚙️ CÀI ĐẶT TRÒ CHƠI</h2>
+        <button id="btn-close-settings" style="background: none; border: none; color: #fff; font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+
+      <div class="setting-row">
+        <span>Đồ Họa:</span>
+        <select id="setting-graphics" style="padding: 6px 12px; border-radius: 8px; background: #1e293b; color: #fff; border: 1px solid #475569;">
+          <option value="low">Thấp (Tối ưu FPS Mobile)</option>
+          <option value="balanced" selected>Cân Bằng (Khuyên dùng)</option>
+          <option value="high">Cao Cấp (Bóng mềm & Đẹp)</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <span>Chế Độ Điều Khiển:</span>
+        <select id="setting-control-mode" style="padding: 6px 12px; border-radius: 8px; background: #1e293b; color: #fff; border: 1px solid #475569;">
+          <option value="auto" selected>Tự Động Nhận Diện Thiết Bị</option>
+          <option value="touch">📱 Cảm Ứng (Mobile / Tablet)</option>
+          <option value="pc">💻 Bàn Phím & Chuột (PC)</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <span>Âm lượng Tổng (Master):</span>
+        <input type="range" id="setting-vol-master" min="0" max="100" value="80">
+      </div>
+
+      <div class="setting-row">
+        <span>Âm thanh Hiệu ứng (SFX):</span>
+        <input type="range" id="setting-vol-sfx" min="0" max="100" value="90">
+      </div>
+
+      <div class="setting-row">
+        <span>Âm thanh Sóng biển (Ambient):</span>
+        <input type="range" id="setting-vol-ambient" min="0" max="100" value="50">
+      </div>
+
+      <div class="setting-row">
+        <span>Độ nhạy Chuột (PC):</span>
+        <input type="range" id="setting-sens-mouse" min="5" max="30" value="12">
+      </div>
+
+      <div class="setting-row">
+        <span>Độ nhạy Cảm ứng (Mobile):</span>
+        <input type="range" id="setting-sens-touch" min="5" max="30" value="15">
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-top: 24px;">
+        <button id="btn-save-quit" class="btn-secondary" style="flex: 1;">💾 LƯU & THOÁT RA MENU</button>
+        <button id="btn-resume-game" class="btn-primary" style="flex: 1;">TIẾP TỤC CHƠI</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div id="screen-gameover" class="modal-overlay" style="display: none;">
+    <div class="glass-panel end-card">
+      <div style="font-size: 52px; margin-bottom: 10px;">💀</div>
+      <h2 class="gameover-title">BẠN ĐÃ GỤC NGÃ!</h2>
+      <p id="gameover-reason" style="font-size: 14px; color: #cbd5e1; margin-bottom: 20px;">Bạn không thể chống chọi lại sự khắc nghiệt của hoang đảo.</p>
+
+      <div style="background: rgba(15, 23, 42, 0.6); padding: 14px; border-radius: 12px; margin-bottom: 24px; text-align: left; font-size: 13px;">
+        <div class="guide-row"><span>Thời gian sống sót:</span> <strong id="go-stat-days">1 Ngày</strong></div>
+        <div class="guide-row"><span>Thú săn đã hạ:</span> <strong id="go-stat-hunts">0</strong></div>
+        <div class="guide-row"><span>Cây cối đã chặt:</span> <strong id="go-stat-trees">0</strong></div>
+      </div>
+
+      <button id="btn-respawn" class="btn-primary" style="width: 100%;">🔄 HỒI SINH TẠI ĐIỂM AN TOÀN</button>
+    </div>
+  </div>
+
+  <!-- Victory Screen -->
+  <div id="screen-victory" class="modal-overlay" style="display: none;">
+    <div class="glass-panel end-card">
+      <div style="font-size: 56px; margin-bottom: 10px;">🚢✨</div>
+      <h2 class="victory-title">BẠN ĐÃ ĐƯỢC GIẢI CỨU!</h2>
+      <p style="font-size: 14px; color: #cbd5e1; margin-bottom: 20px; line-height: 1.6;">
+        Ngọn lửa tín hiệu từ Đài Cứu Hộ đã xé toạc màn đêm! Tàu cứu hộ đã vượt qua rạn san hô đưa bạn trở về đất liền an toàn.
+      </p>
+
+      <div style="background: rgba(15, 23, 42, 0.6); padding: 14px; border-radius: 12px; margin-bottom: 24px; text-align: left; font-size: 13px;">
+        <div class="guide-row"><span>Số ngày sống sót:</span> <strong id="vic-stat-days" style="color: #fbbf24;">1 Ngày</strong></div>
+        <div class="guide-row"><span>Thú dữ đã săn:</span> <strong id="vic-stat-hunts" style="color: #fbbf24;">0</strong></div>
+        <div class="guide-row"><span>Công trình đã dựng:</span> <strong id="vic-stat-structs" style="color: #fbbf24;">0</strong></div>
+        <div class="guide-row"><span>Cá biển đã câu:</span> <strong id="vic-stat-fish" style="color: #fbbf24;">0</strong></div>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        <button id="btn-continue-freeplay" class="btn-secondary" style="flex: 1;">🏝️ CHƠI TIẾP TỰ DO</button>
+        <button id="btn-restart-game" class="btn-primary" style="flex: 1;">🔄 CHƠI LẠI TỪ ĐẦU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Landscape Warning for Mobile Portrait -->
+  <div id="landscape-warning">
+    <div style="font-size: 48px; margin-bottom: 14px;">🔄</div>
+    <h3 style="color: #38bdf8; margin-bottom: 10px;">VUI LÒNG XOAY NGANG MÀN HÌNH</h3>
+    <p style="color: #94a3b8; font-size: 14px; max-width: 280px; line-height: 1.5;">
+      Trải nghiệm Kỷ Nguyên Đồ Đá tốt nhất ở chế độ xoay ngang (Landscape).
+    </p>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
