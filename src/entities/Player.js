@@ -257,7 +257,40 @@ export class Player {
 
     const itemId = itemDef.id;
 
-    if (itemId === 'axe') {
+    if (itemId === 'pickaxe') {
+      const group = new THREE.Group();
+      // Handle
+      const hGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.95, 5);
+      const hMat = new THREE.MeshStandardMaterial({ color: 0x7c4f24, roughness: 0.9 });
+      const hMesh = new THREE.Mesh(hGeo, hMat);
+      hMesh.position.set(0, 0.22, 0);
+      group.add(hMesh);
+
+      // Central Collar
+      const collarGeo = new THREE.BoxGeometry(0.12, 0.16, 0.16);
+      const collarMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6, metalness: 0.4 });
+      const collarMesh = new THREE.Mesh(collarGeo, collarMat);
+      collarMesh.position.set(0, 0.6, 0);
+      group.add(collarMesh);
+
+      // Pointed Pick Spike (Front)
+      const pGeo = new THREE.ConeGeometry(0.07, 0.45, 4);
+      pGeo.rotateZ(-Math.PI / 2.2);
+      const pMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.5, flatShading: true });
+      const pMesh = new THREE.Mesh(pGeo, pMat);
+      pMesh.position.set(0.25, 0.6, 0);
+      group.add(pMesh);
+
+      // Flat Chisel / Hammer Head (Back)
+      const cGeo = new THREE.BoxGeometry(0.24, 0.1, 0.12);
+      const cMesh = new THREE.Mesh(cGeo, pMat);
+      cMesh.position.set(-0.16, 0.6, 0);
+      group.add(cMesh);
+
+      group.rotation.x = -Math.PI / 2.5;
+      this.heldItemSlot.add(group);
+      this.torchLight.intensity = 0;
+    } else if (itemId === 'axe') {
       const group = new THREE.Group();
       // Handle
       const hGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.9, 5);
