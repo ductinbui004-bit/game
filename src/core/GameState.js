@@ -10,6 +10,8 @@ export const ITEM_DEFS = {
   raw_fish: { id: 'raw_fish', name: 'Cá Tươi', icon: '🐟', maxStack: 20, description: 'Cá tươi mới câu được. Nướng chín để ngon hơn.', consumable: { food: 15, health: 2 } },
   cooked_fish: { id: 'cooked_fish', name: 'Cá Nướng', icon: '🍱', maxStack: 20, description: 'Cá nướng béo ngậy. Hồi 40 No và 15 Máu.', consumable: { food: 40, health: 15 } },
   scrap_metal: { id: 'scrap_metal', name: 'Sắt Vụn', icon: '⚙️', maxStack: 20, description: 'Mảnh kim loại từ rương xác tàu đắm. Cần cho đài cứu hộ.' },
+  mushroom: { id: 'mushroom', name: 'Nấm Rừng', icon: '🍄', maxStack: 20, description: 'Nấm rừng bổ dưỡng thu hái từ các bụi cây. Hồi 15 No và 10 Máu.', consumable: { food: 15, health: 10 } },
+  seaweed: { id: 'seaweed', name: 'Rong Biển', icon: '🥗', maxStack: 20, description: 'Rong biển tươi giàu khoáng chất dưới đáy biển. Hồi 10 No và 15 Nước.', consumable: { food: 10, water: 15 } },
   pickaxe: { id: 'pickaxe', name: 'Búa Đào', icon: '⛏️', maxStack: 1, type: 'tool', power: 45, description: 'Búa đào đá thô & khoáng sản. Khai thác mỏm đá siêu nhanh và tăng mạnh sát thương cận chiến.' },
   axe: { id: 'axe', name: 'Rìu Đá', icon: '🪓', maxStack: 1, type: 'tool', power: 30, description: 'Chặt cây siêu nhanh và tăng sát thương cận chiến.' },
   spear: { id: 'spear', name: 'Giáo Săn', icon: '🗡️', maxStack: 1, type: 'weapon', power: 45, description: 'Đâm cá và săn thú hoang từ cự ly an toàn.' },
