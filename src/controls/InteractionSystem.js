@@ -12,7 +12,7 @@ export class InteractionSystem {
     this.soundManager = soundManager;
 
     this.raycaster = new THREE.Raycaster();
-    this.raycaster.far = 4.8; // Interactive distance in meters
+    this.raycaster.far = 5.6; // Generous interactive distance in meters
 
     this.currentTarget = null;
     this.targetData = null;
@@ -92,8 +92,17 @@ export class InteractionSystem {
       icon = '💧';
       btnText = 'UỐNG NƯỚC';
     } else if (data.type === 'fish_school') {
-      icon = '🎣';
-      btnText = 'CÂU CÁ';
+      icon = '🐟';
+      btnText = 'BẮT CÁ';
+      hint = '[E/Click] Phóng Lao / Bắt Cá | [F] Câu Cá';
+    } else if (data.category === 'foliage') {
+      if (data.type === 'fern') { icon = '🌿'; btnText = 'CHẶT DƯƠNG XỈ'; }
+      else if (data.type === 'bush') { icon = '🌳'; btnText = 'CHẶT BỤI CÂY'; }
+      else if (data.type === 'flower') { icon = '🌺'; btnText = 'HÁI HOA'; }
+      else if (data.type === 'mushroom') { icon = '🍄'; btnText = 'HÁI NẤM'; }
+      else if (data.type === 'coral') { icon = '🪸'; btnText = 'ĐẬP SAN HÔ'; }
+      else if (data.type === 'seaweed') { icon = '🥗'; btnText = 'CẮT RONG BIỂN'; }
+      else { icon = '🌿'; btnText = 'THU HOẠCH'; }
     } else if (data.category === 'wildlife' || data.type === 'boar' || data.type === 'shark') {
       icon = data.icon || '⚔️';
       btnText = 'TẤN CÔNG';
@@ -213,7 +222,36 @@ export class InteractionSystem {
       this.gameState.drinkFreshwater();
       this.gameState.notify('toast', { text: '💧 Đã uống nước suối mát lạnh (+40 Nước)', type: 'info' });
     }
-    // 5. Attack Wildlife (Land or Sea)
+    // 5. Attack & Harvest Any Foliage (Ferns, Bushes, Flowers, Mushrooms, Corals, Seaweeds)
+    else if (data.category === 'foliage') {
+      if (data.type === 'coral') {
+        this.soundManager.playMine();
+      } else if (data.type === 'fern' || data.type === 'bush') {
+        this.soundManager.playChop();
+      } else {
+        this.soundManager.playPickup();
+      }
+
+      const res = this.foliageManager.damageFoliage(data, damage);
+      if (res && res.destroyed) {
+        this.gameState.notify('toast', { text: `🌿 Đã thu hoạch thành công: ${data.name}!`, type: 'success' });
+        this.currentTarget = null;
+        this.targetData = null;
+        this.resetHintUI();
+      }
+    }
+    // 6. Attack Fish School (Harpoon / Spear Fishing)
+    else if (data.type === 'fish_school') {
+      this.soundManager.playSplash();
+      this.soundManager.playFishBite();
+      this.gameState.addItem('raw_fish', 1);
+      this.gameState.stats.fishCaught += 1;
+      this.gameState.stats.animalsHunted += 1;
+      this.gameState.notify('toast', { text: '🐟 Phóng trúng cá! Nhận +1 Cá Tươi.', type: 'success' });
+      // Fish school scatters in water
+      data.orbitRadius += 2.5;
+    }
+    // 7. Attack Wildlife (Land or Sea)
     else if (data.category === 'wildlife' || data.type === 'boar' || data.type === 'shark') {
       const res = this.wildlifeManager.damageEntity(data, damage);
       if (res && res.killed) {
