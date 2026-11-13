@@ -502,12 +502,45 @@ export class FoliageManager {
           const s = 0.7 + Math.random() * 0.5;
           group.scale.set(s, s, s);
           group.position.set(x, y, z);
+
+          const data = {
+            category: 'foliage',
+            type: 'fern',
+            name: 'Bụi Dương Xỉ',
+            health: 35,
+            maxHealth: 35,
+            group: group,
+            position: new THREE.Vector3(x, y, z),
+            drops: [{ id: 'palm_leaf', count: 2 }],
+            hint: '[E/Click] Chặt Bụi Dương Xỉ (35/35 HP)'
+          };
+          group.userData = data;
+
           this.scene.add(group);
+          this.interactiveObjects.push(group);
           this.swayFoliage.push({ mesh: group, fronds, speed: 1.2 + Math.random() * 0.5, offset: Math.random() * Math.PI });
         } else {
           const bush = this.createBushMesh();
           bush.position.set(x, y, z);
+
+          const data = {
+            category: 'foliage',
+            type: 'bush',
+            name: 'Bụi Cây Rừng',
+            health: 45,
+            maxHealth: 45,
+            group: bush,
+            position: new THREE.Vector3(x, y, z),
+            drops: [
+              { id: 'wood', count: 1 },
+              { id: 'palm_leaf', count: 1 }
+            ],
+            hint: '[E/Click] Chặt Bụi Cây Dại (45/45 HP)'
+          };
+          bush.userData = data;
+
           this.scene.add(bush);
+          this.interactiveObjects.push(bush);
         }
       }
     }
@@ -557,7 +590,22 @@ export class FoliageManager {
       if (y > 0.8 && y < 5.5) {
         const flowers = this.createFlowerPatch();
         flowers.position.set(x, y, z);
+
+        const data = {
+          category: 'foliage',
+          type: 'flower',
+          name: 'Thảm Hoa Rừng',
+          health: 20,
+          maxHealth: 20,
+          group: flowers,
+          position: new THREE.Vector3(x, y, z),
+          drops: [{ id: 'palm_leaf', count: 1 }],
+          hint: '[E/Click] Thu Hoạch Hoa Rừng (20/20 HP)'
+        };
+        flowers.userData = data;
+
         this.scene.add(flowers);
+        this.interactiveObjects.push(flowers);
         this.swayFoliage.push({ mesh: flowers, speed: 2.0, offset: Math.random() * 5 });
       }
     }
@@ -602,7 +650,22 @@ export class FoliageManager {
       if (y > 1.0 && y < 6.0) {
         const shrooms = this.createMushroomCluster();
         shrooms.position.set(x, y, z);
+
+        const data = {
+          category: 'foliage',
+          type: 'mushroom',
+          name: 'Cụm Nấm Rừng',
+          health: 15,
+          maxHealth: 15,
+          group: shrooms,
+          position: new THREE.Vector3(x, y, z),
+          drops: [{ id: 'mushroom', count: 2 }],
+          hint: '[E/Click] Hái Nấm Rừng (15/15 HP)'
+        };
+        shrooms.userData = data;
+
         this.scene.add(shrooms);
+        this.interactiveObjects.push(shrooms);
       }
     }
   }
@@ -645,7 +708,25 @@ export class FoliageManager {
       if (y < -0.4 && y > -4.5) {
         const coral = this.createCoralMesh();
         coral.position.set(x, y, z);
+
+        const data = {
+          category: 'foliage',
+          type: 'coral',
+          name: 'Rạn San Hô',
+          health: 60,
+          maxHealth: 60,
+          group: coral,
+          position: new THREE.Vector3(x, y, z),
+          drops: [
+            { id: 'stone', count: 2 },
+            { id: 'scrap_metal', count: 1 }
+          ],
+          hint: '[E/Click] Đập Vỡ San Hô (60/60 HP)'
+        };
+        coral.userData = data;
+
         this.scene.add(coral);
+        this.interactiveObjects.push(coral);
       }
     }
   }
@@ -683,10 +764,71 @@ export class FoliageManager {
       if (y < -0.8 && y > -4.0) {
         const { group, ribbons } = this.createSeaweedCluster();
         group.position.set(x, y, z);
+
+        const data = {
+          category: 'foliage',
+          type: 'seaweed',
+          name: 'Thảm Rong Biển',
+          health: 30,
+          maxHealth: 30,
+          group: group,
+          position: new THREE.Vector3(x, y, z),
+          drops: [{ id: 'seaweed', count: 2 }],
+          hint: '[E/Click] Cắt Rong Biển (30/30 HP)'
+        };
+        group.userData = data;
+
         this.scene.add(group);
-        this.swaySeaweed.push({ ribbons, offset: Math.random() * Math.PI });
+        this.interactiveObjects.push(group);
+        this.swaySeaweed.push({ mesh: group, ribbons, offset: Math.random() * Math.PI });
       }
     }
+  }
+
+  // --- Attack / Damage Any Foliage ---
+  damageFoliage(foliageData, damage = 30) {
+    if (!foliageData) return { destroyed: false };
+
+    foliageData.health -= damage;
+    foliageData.hint = `[E/Click] Tấn Công ${foliageData.name} (${Math.max(0, foliageData.health)}/${foliageData.maxHealth} HP)`;
+
+    // Wobble on hit
+    if (foliageData.group) {
+      foliageData.group.rotation.z += 0.12;
+      setTimeout(() => {
+        if (foliageData.group) foliageData.group.rotation.z -= 0.12;
+      }, 100);
+    }
+
+    if (foliageData.health <= 0) {
+      this.scene.remove(foliageData.group);
+
+      const intIdx = this.interactiveObjects.indexOf(foliageData.group);
+      if (intIdx !== -1) this.interactiveObjects.splice(intIdx, 1);
+
+      // Remove from sway lists
+      const sIdx = this.swayFoliage.findIndex(item => item.mesh === foliageData.group);
+      if (sIdx !== -1) this.swayFoliage.splice(sIdx, 1);
+
+      const wIdx = this.swaySeaweed.findIndex(item => item.mesh === foliageData.group);
+      if (wIdx !== -1) this.swaySeaweed.splice(wIdx, 1);
+
+      // Spawn drops
+      if (foliageData.drops) {
+        foliageData.drops.forEach((d, i) => {
+          this.spawnDrop(
+            foliageData.position.x + (i * 0.25),
+            foliageData.position.z + (i * 0.25),
+            d.id,
+            d.count
+          );
+        });
+      }
+
+      return { destroyed: true, data: foliageData };
+    }
+
+    return { destroyed: false, data: foliageData };
   }
 
   // --- Real-time Gentle Wind & Ocean Wave Sway ---
