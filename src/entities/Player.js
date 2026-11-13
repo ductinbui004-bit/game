@@ -1,4 +1,4 @@
-// Player.js - Procedural Low-Poly Male/Female human character, animations, camera rig, and physics
+// Player.js - Realistic articulated humanoid character, natural human kinematics, dynamic hunting combat, and swimming/diving physics
 import * as THREE from 'three';
 
 export class Player {
@@ -24,27 +24,36 @@ export class Player {
     this.hasInitializedCam = false;
 
     this.isGrounded = true;
+    this.wasGrounded = true;
+    this.landingTimer = 0;
+
     this.isSwimming = false;
     this.isUnderwater = false;
     this.isSprinting = false;
     this.isCrouching = false;
     this.isSwinging = false;
     this.swingProgress = 0;
+    this.punchHand = 0; // 0 for right, 1 for left punch
 
     // Speeds
     this.walkSpeed = 5.5;
     this.runSpeed = 9.2;
-    this.swimSpeed = 4.2;
-    this.jumpForce = 7.5;
+    this.swimSpeed = 4.4;
+    this.jumpForce = 7.6;
     this.gravity = -20;
 
-    // Procedural 3D model & bones
+    // Procedural 3D model & articulated bones
     this.modelGroup = new THREE.Group();
     this.heldItemSlot = new THREE.Group();
     this.torchLight = null;
     this.bones = {};
+    this.equippedItemId = 'pickaxe'; // Default equipped
     this.animTime = 0;
     this.stepTimer = 0;
+
+    // Underwater diving bubble particles
+    this.bubbles = [];
+    this.bubbleTimer = 0;
 
     this.init();
   }
@@ -53,12 +62,12 @@ export class Player {
     this.buildProceduralCharacter();
     this.scene.add(this.modelGroup);
     this.setupTorchLight();
+    this.setupUnderwaterBubbles();
     this.updateViewMode();
   }
 
   setGender(gender) {
     this.gender = gender;
-    // Rebuild character model
     while (this.modelGroup.children.length > 0) {
       this.modelGroup.remove(this.modelGroup.children[0]);
     }
@@ -67,176 +76,403 @@ export class Player {
     this.updateViewMode();
   }
 
+  // --- Realistic Articulated Humanoid Model ---
   buildProceduralCharacter() {
     const isMale = this.gender === 'male';
 
-    // Color palette
+    // Natural skin & clothing tones
     const skinColor = isMale ? 0xcfa27a : 0xdfb48c;
-    const tunicColor = isMale ? 0x82542a : 0x2e593e;
-    const hairColor = isMale ? 0x24160e : 0x3d2315;
-    const leatherColor = 0x54371e;
+    const tunicColor = isMale ? 0x7c4922 : 0x27593c;
+    const leatherColor = 0x422915;
+    const hairColor = isMale ? 0x1f140e : 0x331c11;
     const trimColor = isMale ? 0xb45309 : 0x0284c7;
 
-    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.8, flatShading: true });
-    const tunicMat = new THREE.MeshStandardMaterial({ color: tunicColor, roughness: 0.9, flatShading: true });
+    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.75, flatShading: true });
+    const tunicMat = new THREE.MeshStandardMaterial({ color: tunicColor, roughness: 0.85, flatShading: true });
+    const leatherMat = new THREE.MeshStandardMaterial({ color: leatherColor, roughness: 0.8, flatShading: true });
     const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.9, flatShading: true });
-    const leatherMat = new THREE.MeshStandardMaterial({ color: leatherColor, roughness: 0.85, flatShading: true });
     const trimMat = new THREE.MeshStandardMaterial({ color: trimColor, roughness: 0.7, flatShading: true });
+    const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+    const lipMat = new THREE.MeshStandardMaterial({ color: 0x9b584d, roughness: 0.6 });
 
-    // Root Pelvis
+    // 1. Root Pelvis (Hips)
     const pelvis = new THREE.Group();
     pelvis.position.set(0, 0.95, 0);
     this.modelGroup.add(pelvis);
 
-    // Torso
-    const torsoW = isMale ? 0.66 : 0.52;
-    const torsoH = 0.65;
-    const torsoD = 0.35;
-    const torsoGeo = new THREE.BoxGeometry(torsoW, torsoH, torsoD);
-    const torsoMesh = new THREE.Mesh(torsoGeo, tunicMat);
-    torsoMesh.position.set(0, 0.32, 0);
-    torsoMesh.castShadow = true;
-    pelvis.add(torsoMesh);
+    // Hips / Lower Abdomen Mesh
+    const hipGeo = new THREE.BoxGeometry(isMale ? 0.48 : 0.44, 0.22, 0.28);
+    const hipMesh = new THREE.Mesh(hipGeo, tunicMat);
+    hipMesh.position.set(0, 0, 0);
+    hipMesh.castShadow = true;
+    pelvis.add(hipMesh);
 
-    // Primitive Belt & Sash
-    const beltGeo = new THREE.BoxGeometry(torsoW + 0.04, 0.12, torsoD + 0.04);
+    // Primitive Leather Belt
+    const beltGeo = new THREE.BoxGeometry(isMale ? 0.52 : 0.48, 0.1, 0.32);
     const belt = new THREE.Mesh(beltGeo, leatherMat);
-    belt.position.set(0, 0.06, 0);
+    belt.position.set(0, 0.08, 0);
     pelvis.add(belt);
 
+    // Bronze / Stone Belt Buckle
+    const buckleGeo = new THREE.BoxGeometry(0.12, 0.08, 0.04);
+    const buckleMat = new THREE.MeshStandardMaterial({ color: 0xca8a04, metalness: 0.6, roughness: 0.4 });
+    const buckle = new THREE.Mesh(buckleGeo, buckleMat);
+    buckle.position.set(0, 0.08, 0.17);
+    pelvis.add(buckle);
+
+    // Loincloth Flap (hangs down in front)
+    const flapGeo = new THREE.BoxGeometry(0.24, 0.32, 0.04);
+    flapGeo.translate(0, -0.16, 0);
+    const loincloth = new THREE.Mesh(flapGeo, leatherMat);
+    loincloth.position.set(0, 0.06, 0.15);
+    pelvis.add(loincloth);
+
+    // 2. Torso Group (Chest, Shoulders & Ribcage)
+    const torsoGroup = new THREE.Group();
+    torsoGroup.position.set(0, 0.12, 0);
+    pelvis.add(torsoGroup);
+
+    const chestW = isMale ? 0.64 : 0.52;
+    const chestH = 0.55;
+    const chestD = 0.34;
+    const chestGeo = new THREE.BoxGeometry(chestW, chestH, chestD);
+    chestGeo.translate(0, chestH * 0.5, 0);
+    const chestMesh = new THREE.Mesh(chestGeo, tunicMat);
+    chestMesh.castShadow = true;
+    torsoGroup.add(chestMesh);
+
     if (isMale) {
-      // Warrior fur sash diagonally across chest
-      const sashGeo = new THREE.BoxGeometry(0.18, 0.7, 0.08);
+      // Warrior Fur Sash across chest
+      const sashGeo = new THREE.BoxGeometry(0.16, 0.65, 0.06);
       const sash = new THREE.Mesh(sashGeo, leatherMat);
-      sash.position.set(0, 0.34, 0.15);
-      sash.rotation.z = 0.35;
-      pelvis.add(sash);
+      sash.position.set(0, 0.3, 0.16);
+      sash.rotation.z = 0.45;
+      torsoGroup.add(sash);
     }
 
-    // Head Group
-    const headGroup = new THREE.Group();
-    headGroup.position.set(0, 0.72, 0);
-    pelvis.add(headGroup);
+    // 3. Neck & Realistic Head
+    const neckGroup = new THREE.Group();
+    neckGroup.position.set(0, chestH + 0.02, 0);
+    torsoGroup.add(neckGroup);
 
-    const headGeo = new THREE.BoxGeometry(0.38, 0.4, 0.38);
+    const neckGeo = new THREE.CylinderGeometry(0.12, 0.14, 0.14, 6);
+    neckGeo.translate(0, 0.07, 0);
+    const neck = new THREE.Mesh(neckGeo, skinMat);
+    neckGroup.add(neck);
+
+    const headGroup = new THREE.Group();
+    headGroup.position.set(0, 0.14, 0);
+    neckGroup.add(headGroup);
+
+    // Cranium with sculpted jaw
+    const headGeo = new THREE.BoxGeometry(0.34, 0.36, 0.34);
+    headGeo.translate(0, 0.18, 0);
     const headMesh = new THREE.Mesh(headGeo, skinMat);
     headMesh.castShadow = true;
     headGroup.add(headMesh);
 
-    // Hair Top
-    const hairGeo = new THREE.BoxGeometry(0.42, 0.16, 0.42);
-    const hairMesh = new THREE.Mesh(hairGeo, hairMat);
-    hairMesh.position.set(0, 0.18, 0);
-    headGroup.add(hairMesh);
+    // 3D Eyes (White sclera + Pupils)
+    const eyeGeo = new THREE.BoxGeometry(0.065, 0.045, 0.02);
+    const pupilGeo = new THREE.BoxGeometry(0.035, 0.035, 0.025);
+
+    // Left Eye
+    const eyeL = new THREE.Mesh(eyeGeo, eyeWhiteMat);
+    eyeL.position.set(-0.08, 0.21, 0.18);
+    headGroup.add(eyeL);
+    const pupL = new THREE.Mesh(pupilGeo, pupilMat);
+    pupL.position.set(-0.08, 0.21, 0.185);
+    headGroup.add(pupL);
+
+    // Right Eye
+    const eyeR = new THREE.Mesh(eyeGeo, eyeWhiteMat);
+    eyeR.position.set(0.08, 0.21, 0.18);
+    headGroup.add(eyeR);
+    const pupR = new THREE.Mesh(pupilGeo, pupilMat);
+    pupR.position.set(0.08, 0.21, 0.185);
+    headGroup.add(pupR);
+
+    // Nose Bridge
+    const noseGeo = new THREE.BoxGeometry(0.055, 0.09, 0.06);
+    const nose = new THREE.Mesh(noseGeo, skinMat);
+    nose.position.set(0, 0.17, 0.2);
+    headGroup.add(nose);
+
+    // Lips / Mouth
+    const lipGeo = new THREE.BoxGeometry(0.1, 0.03, 0.02);
+    const lips = new THREE.Mesh(lipGeo, lipMat);
+    lips.position.set(0, 0.09, 0.18);
+    headGroup.add(lips);
+
+    // Ears
+    const earGeo = new THREE.BoxGeometry(0.04, 0.08, 0.06);
+    const earL = new THREE.Mesh(earGeo, skinMat);
+    earL.position.set(-0.19, 0.2, 0);
+    headGroup.add(earL);
+    const earR = new THREE.Mesh(earGeo, skinMat);
+    earR.position.set(0.19, 0.2, 0);
+    headGroup.add(earR);
+
+    // Hair Top & Sides
+    const hairTopGeo = new THREE.BoxGeometry(0.38, 0.15, 0.38);
+    hairTopGeo.translate(0, 0.38, 0);
+    const hairTop = new THREE.Mesh(hairTopGeo, hairMat);
+    headGroup.add(hairTop);
 
     // Headband
-    const bandGeo = new THREE.BoxGeometry(0.43, 0.06, 0.43);
+    const bandGeo = new THREE.BoxGeometry(0.39, 0.06, 0.39);
+    bandGeo.translate(0, 0.28, 0);
     const band = new THREE.Mesh(bandGeo, trimMat);
-    band.position.set(0, 0.12, 0);
     headGroup.add(band);
 
     if (isMale) {
-      // Warrior Beard
-      const beardGeo = new THREE.BoxGeometry(0.34, 0.16, 0.22);
+      // Warrior Beard & Sideburns
+      const beardGeo = new THREE.BoxGeometry(0.3, 0.16, 0.18);
       const beard = new THREE.Mesh(beardGeo, hairMat);
-      beard.position.set(0, -0.15, 0.16);
+      beard.position.set(0, 0.05, 0.12);
       headGroup.add(beard);
     } else {
       // Huntress Braids & Feather
-      const braidGeo = new THREE.BoxGeometry(0.12, 0.48, 0.12);
-      const braid1 = new THREE.Mesh(braidGeo, hairMat);
-      braid1.position.set(-0.12, -0.12, -0.22);
-      braid1.rotation.x = -0.2;
-      headGroup.add(braid1);
+      const braidGeo = new THREE.BoxGeometry(0.09, 0.5, 0.09);
+      const braidL = new THREE.Mesh(braidGeo, hairMat);
+      braidL.position.set(-0.14, 0.05, -0.16);
+      braidL.rotation.x = -0.2;
+      headGroup.add(braidL);
 
-      const braid2 = new THREE.Mesh(braidGeo, hairMat);
-      braid2.position.set(0.12, -0.12, -0.22);
-      braid2.rotation.x = -0.2;
-      headGroup.add(braid2);
+      const braidR = new THREE.Mesh(braidGeo, hairMat);
+      braidR.position.set(0.14, 0.05, -0.16);
+      braidR.rotation.x = -0.2;
+      headGroup.add(braidR);
 
-      // Feather clip
-      const featherGeo = new THREE.ConeGeometry(0.06, 0.28, 4);
+      const featherGeo = new THREE.ConeGeometry(0.05, 0.3, 4);
       const feather = new THREE.Mesh(featherGeo, trimMat);
-      feather.position.set(0.22, 0.2, -0.05);
+      feather.position.set(0.2, 0.36, -0.05);
       feather.rotation.z = -0.4;
       headGroup.add(feather);
     }
 
-    // Left Arm
-    const leftArmGroup = new THREE.Group();
-    leftArmGroup.position.set(-torsoW * 0.58, 0.55, 0);
-    pelvis.add(leftArmGroup);
+    // 4. Dual-Jointed Arms (Upper Arm -> Elbow -> Forearm -> Hand)
+    const armRadius = isMale ? 0.09 : 0.075;
+    const upperArmLen = 0.34;
+    const forearmLen = 0.34;
 
-    const armGeo = new THREE.BoxGeometry(0.18, 0.6, 0.18);
-    armGeo.translate(0, -0.28, 0);
-    const leftArmMesh = new THREE.Mesh(armGeo, skinMat);
-    leftArmMesh.castShadow = true;
-    leftArmGroup.add(leftArmMesh);
+    // --- Left Arm ---
+    const leftShoulder = new THREE.Group();
+    leftShoulder.position.set(-chestW * 0.56, chestH * 0.88, 0);
+    torsoGroup.add(leftShoulder);
 
-    // Left Arm Bracer
-    const bracerGeo = new THREE.BoxGeometry(0.2, 0.14, 0.2);
-    const leftBracer = new THREE.Mesh(bracerGeo, leatherMat);
-    leftBracer.position.set(0, -0.42, 0);
-    leftArmGroup.add(leftBracer);
+    const leftUpperArm = new THREE.Group();
+    leftShoulder.add(leftUpperArm);
 
-    // Right Arm (Weapon / Tool Arm)
-    const rightArmGroup = new THREE.Group();
-    rightArmGroup.position.set(torsoW * 0.58, 0.55, 0);
-    pelvis.add(rightArmGroup);
+    const uArmGeo = new THREE.BoxGeometry(armRadius * 2, upperArmLen, armRadius * 2);
+    uArmGeo.translate(0, -upperArmLen * 0.5, 0);
+    const uArmMeshL = new THREE.Mesh(uArmGeo, skinMat);
+    uArmMeshL.castShadow = true;
+    leftUpperArm.add(uArmMeshL);
 
-    const rightArmMesh = new THREE.Mesh(armGeo, skinMat);
-    rightArmMesh.castShadow = true;
-    rightArmGroup.add(rightArmMesh);
+    const leftElbow = new THREE.Group();
+    leftElbow.position.set(0, -upperArmLen, 0);
+    leftUpperArm.add(leftElbow);
 
-    const rightBracer = new THREE.Mesh(bracerGeo, leatherMat);
-    rightBracer.position.set(0, -0.42, 0);
-    rightArmGroup.add(rightBracer);
+    const fArmGeo = new THREE.BoxGeometry(armRadius * 1.8, forearmLen, armRadius * 1.8);
+    fArmGeo.translate(0, -forearmLen * 0.5, 0);
+    const fArmMeshL = new THREE.Mesh(fArmGeo, skinMat);
+    fArmMeshL.castShadow = true;
+    leftElbow.add(fArmMeshL);
 
-    // Right Hand Held Item Slot
+    // Left Bracer & Hand
+    const bracerGeo = new THREE.BoxGeometry(armRadius * 2.1, 0.16, armRadius * 2.1);
+    const bracerL = new THREE.Mesh(bracerGeo, leatherMat);
+    bracerL.position.set(0, -forearmLen * 0.55, 0);
+    leftElbow.add(bracerL);
+
+    const handGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+    const leftHand = new THREE.Mesh(handGeo, skinMat);
+    leftHand.position.set(0, -forearmLen, 0);
+    leftElbow.add(leftHand);
+
+    // --- Right Arm (Weapon Arm) ---
+    const rightShoulder = new THREE.Group();
+    rightShoulder.position.set(chestW * 0.56, chestH * 0.88, 0);
+    torsoGroup.add(rightShoulder);
+
+    const rightUpperArm = new THREE.Group();
+    rightShoulder.add(rightUpperArm);
+
+    const uArmMeshR = new THREE.Mesh(uArmGeo, skinMat);
+    uArmMeshR.castShadow = true;
+    rightUpperArm.add(uArmMeshR);
+
+    const rightElbow = new THREE.Group();
+    rightElbow.position.set(0, -upperArmLen, 0);
+    rightUpperArm.add(rightElbow);
+
+    const fArmMeshR = new THREE.Mesh(fArmGeo, skinMat);
+    fArmMeshR.castShadow = true;
+    rightElbow.add(fArmMeshR);
+
+    const bracerR = new THREE.Mesh(bracerGeo, leatherMat);
+    bracerR.position.set(0, -forearmLen * 0.55, 0);
+    rightElbow.add(bracerR);
+
+    const rightHand = new THREE.Mesh(handGeo, skinMat);
+    rightHand.position.set(0, -forearmLen, 0);
+    rightElbow.add(rightHand);
+
+    // Weapon Slot attached to right hand
     this.heldItemSlot = new THREE.Group();
-    this.heldItemSlot.position.set(0, -0.55, 0.15);
-    rightArmGroup.add(this.heldItemSlot);
+    this.heldItemSlot.position.set(0, -forearmLen - 0.04, 0.1);
+    rightElbow.add(this.heldItemSlot);
 
-    // Left Leg
-    const leftLegGroup = new THREE.Group();
-    leftLegGroup.position.set(-0.16, 0, 0);
-    pelvis.add(leftLegGroup);
+    // 5. Dual-Jointed Legs (Hip -> Thigh -> Knee -> Calf -> Foot)
+    const legWidth = isMale ? 0.18 : 0.16;
+    const thighLen = 0.44;
+    const calfLen = 0.42;
 
-    const legGeo = new THREE.BoxGeometry(0.2, 0.72, 0.2);
-    legGeo.translate(0, -0.36, 0);
-    const leftLegMesh = new THREE.Mesh(legGeo, skinMat);
-    leftLegMesh.castShadow = true;
-    leftLegGroup.add(leftLegMesh);
+    // --- Left Leg ---
+    const leftHip = new THREE.Group();
+    leftHip.position.set(-0.16, -0.05, 0);
+    pelvis.add(leftHip);
 
-    // Right Leg
-    const rightLegGroup = new THREE.Group();
-    rightLegGroup.position.set(0.16, 0, 0);
-    pelvis.add(rightLegGroup);
+    const leftThigh = new THREE.Group();
+    leftHip.add(leftThigh);
 
-    const rightLegMesh = new THREE.Mesh(legGeo, skinMat);
-    rightLegMesh.castShadow = true;
-    rightLegGroup.add(rightLegMesh);
+    const thighGeo = new THREE.BoxGeometry(legWidth, thighLen, legWidth);
+    thighGeo.translate(0, -thighLen * 0.5, 0);
+    const thighMeshL = new THREE.Mesh(thighGeo, skinMat);
+    thighMeshL.castShadow = true;
+    leftThigh.add(thighMeshL);
 
+    const leftKnee = new THREE.Group();
+    leftKnee.position.set(0, -thighLen, 0);
+    leftThigh.add(leftKnee);
+
+    const calfGeo = new THREE.BoxGeometry(legWidth * 0.95, calfLen, legWidth * 0.95);
+    calfGeo.translate(0, -calfLen * 0.5, 0);
+    const calfMeshL = new THREE.Mesh(calfGeo, skinMat);
+    calfMeshL.castShadow = true;
+    leftKnee.add(calfMeshL);
+
+    // Leather Boots
+    const bootGeo = new THREE.BoxGeometry(legWidth * 1.1, 0.22, legWidth * 1.5);
+    bootGeo.translate(0, -calfLen + 0.08, 0.04);
+    const bootL = new THREE.Mesh(bootGeo, leatherMat);
+    bootL.castShadow = true;
+    leftKnee.add(bootL);
+
+    // --- Right Leg ---
+    const rightHip = new THREE.Group();
+    rightHip.position.set(0.16, -0.05, 0);
+    pelvis.add(rightHip);
+
+    const rightThigh = new THREE.Group();
+    rightHip.add(rightThigh);
+
+    const thighMeshR = new THREE.Mesh(thighGeo, skinMat);
+    thighMeshR.castShadow = true;
+    rightThigh.add(thighMeshR);
+
+    const rightKnee = new THREE.Group();
+    rightKnee.position.set(0, -thighLen, 0);
+    rightThigh.add(rightKnee);
+
+    const calfMeshR = new THREE.Mesh(calfGeo, skinMat);
+    calfMeshR.castShadow = true;
+    rightKnee.add(calfMeshR);
+
+    const bootR = new THREE.Mesh(bootGeo, leatherMat);
+    bootR.castShadow = true;
+    rightKnee.add(bootR);
+
+    // Store articulated skeleton bones
     this.bones = {
       pelvis,
+      torsoGroup,
+      neckGroup,
       headGroup,
-      leftArmGroup,
-      rightArmGroup,
-      leftLegGroup,
-      rightLegGroup
+      leftShoulder,
+      leftUpperArm,
+      leftElbow,
+      rightShoulder,
+      rightUpperArm,
+      rightElbow,
+      leftHip,
+      leftThigh,
+      leftKnee,
+      rightHip,
+      rightThigh,
+      rightKnee,
+      loincloth
     };
   }
 
   setupTorchLight() {
     this.torchLight = new THREE.PointLight(0xffaa44, 0, 16, 1.8);
     this.torchLight.position.set(0, 0.4, 0.2);
-    this.torchLight.castShadow = false; // Fast light
+    this.torchLight.castShadow = false;
     this.heldItemSlot.add(this.torchLight);
+  }
+
+  setupUnderwaterBubbles() {
+    const bubbleGeo = new THREE.SphereGeometry(0.045, 4, 4);
+    const bubbleMat = new THREE.MeshStandardMaterial({
+      color: 0xcfeafe,
+      roughness: 0.1,
+      metalness: 0.8,
+      transparent: true,
+      opacity: 0.75
+    });
+
+    for (let i = 0; i < 15; i++) {
+      const mesh = new THREE.Mesh(bubbleGeo, bubbleMat);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.bubbles.push({
+        mesh,
+        active: false,
+        velocity: new THREE.Vector3(),
+        life: 0
+      });
+    }
+  }
+
+  emitUnderwaterBubble() {
+    const b = this.bubbles.find(item => !item.active);
+    if (!b) return;
+
+    b.active = true;
+    b.mesh.visible = true;
+    b.mesh.position.set(
+      this.position.x + (Math.random() - 0.5) * 0.3,
+      this.position.y + 1.45,
+      this.position.z + (Math.random() - 0.5) * 0.3
+    );
+    b.velocity.set(
+      (Math.random() - 0.5) * 0.3,
+      1.8 + Math.random() * 0.8, // Ascend to surface
+      (Math.random() - 0.5) * 0.3
+    );
+    b.life = 1.6;
+  }
+
+  updateUnderwaterBubbles(dt) {
+    this.bubbles.forEach(b => {
+      if (!b.active) return;
+      b.life -= dt;
+      b.mesh.position.addScaledVector(b.velocity, dt);
+      // Gentle wobble
+      b.mesh.position.x += Math.sin(Date.now() * 0.01) * 0.01;
+
+      // Pop when reaching surface (y >= 0.0) or lifespan expired
+      if (b.life <= 0 || b.mesh.position.y >= 0.05) {
+        b.active = false;
+        b.mesh.visible = false;
+      }
+    });
   }
 
   // --- Equip Held Tool in 3D Hand ---
   setEquippedItem(itemDef) {
-    // Clear old held meshes
     while (this.heldItemSlot.children.length > 0) {
       const child = this.heldItemSlot.children[0];
       if (child === this.torchLight) {
@@ -245,46 +481,47 @@ export class Player {
       }
       this.heldItemSlot.remove(child);
     }
-    // Re-attach torchlight
     if (!this.heldItemSlot.children.includes(this.torchLight)) {
       this.heldItemSlot.add(this.torchLight);
     }
 
     if (!itemDef) {
+      this.equippedItemId = 'fist';
       this.torchLight.intensity = 0;
       return;
     }
 
     const itemId = itemDef.id;
+    this.equippedItemId = itemId;
 
     if (itemId === 'pickaxe') {
       const group = new THREE.Group();
       // Handle
-      const hGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.95, 5);
+      const hGeo = new THREE.CylinderGeometry(0.035, 0.045, 0.95, 5);
       const hMat = new THREE.MeshStandardMaterial({ color: 0x7c4f24, roughness: 0.9 });
       const hMesh = new THREE.Mesh(hGeo, hMat);
       hMesh.position.set(0, 0.22, 0);
       group.add(hMesh);
 
-      // Central Collar
+      // Collar
       const collarGeo = new THREE.BoxGeometry(0.12, 0.16, 0.16);
-      const collarMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6, metalness: 0.4 });
+      const collarMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6, metalness: 0.5 });
       const collarMesh = new THREE.Mesh(collarGeo, collarMat);
       collarMesh.position.set(0, 0.6, 0);
       group.add(collarMesh);
 
-      // Pointed Pick Spike (Front)
-      const pGeo = new THREE.ConeGeometry(0.07, 0.45, 4);
+      // Pointed Pick Spike
+      const pGeo = new THREE.ConeGeometry(0.065, 0.45, 4);
       pGeo.rotateZ(-Math.PI / 2.2);
-      const pMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.5, flatShading: true });
+      const pMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.6, flatShading: true });
       const pMesh = new THREE.Mesh(pGeo, pMat);
-      pMesh.position.set(0.25, 0.6, 0);
+      pMesh.position.set(0.24, 0.6, 0);
       group.add(pMesh);
 
-      // Flat Chisel / Hammer Head (Back)
-      const cGeo = new THREE.BoxGeometry(0.24, 0.1, 0.12);
+      // Flat Chisel Head
+      const cGeo = new THREE.BoxGeometry(0.22, 0.1, 0.11);
       const cMesh = new THREE.Mesh(cGeo, pMat);
-      cMesh.position.set(-0.16, 0.6, 0);
+      cMesh.position.set(-0.15, 0.6, 0);
       group.add(cMesh);
 
       group.rotation.x = -Math.PI / 2.5;
@@ -292,14 +529,12 @@ export class Player {
       this.torchLight.intensity = 0;
     } else if (itemId === 'axe') {
       const group = new THREE.Group();
-      // Handle
       const hGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.9, 5);
       const hMat = new THREE.MeshStandardMaterial({ color: 0x8a5829, roughness: 0.9 });
       const hMesh = new THREE.Mesh(hGeo, hMat);
       hMesh.position.set(0, 0.2, 0);
       group.add(hMesh);
 
-      // Stone Blade
       const bGeo = new THREE.BoxGeometry(0.1, 0.28, 0.35);
       const bMat = new THREE.MeshStandardMaterial({ color: 0x6e7175, roughness: 0.7, flatShading: true });
       const bMesh = new THREE.Mesh(bGeo, bMat);
@@ -311,32 +546,29 @@ export class Player {
       this.torchLight.intensity = 0;
     } else if (itemId === 'spear') {
       const group = new THREE.Group();
-      // Shaft
-      const sGeo = new THREE.CylinderGeometry(0.035, 0.04, 1.8, 5);
+      const sGeo = new THREE.CylinderGeometry(0.03, 0.035, 1.9, 5);
       const sMat = new THREE.MeshStandardMaterial({ color: 0x8a5829, roughness: 0.9 });
       const sMesh = new THREE.Mesh(sGeo, sMat);
-      sMesh.position.set(0, 0.4, 0);
+      sMesh.position.set(0, 0.45, 0);
       group.add(sMesh);
 
-      // Tip
-      const tGeo = new THREE.ConeGeometry(0.08, 0.35, 4);
-      const tMat = new THREE.MeshStandardMaterial({ color: 0x5a5c5e, roughness: 0.6, flatShading: true });
+      const tGeo = new THREE.ConeGeometry(0.075, 0.38, 4);
+      const tMat = new THREE.MeshStandardMaterial({ color: 0x5a5c5e, roughness: 0.5, metalness: 0.5, flatShading: true });
       const tMesh = new THREE.Mesh(tGeo, tMat);
-      tMesh.position.set(0, 1.35, 0);
+      tMesh.position.set(0, 1.45, 0);
       group.add(tMesh);
 
-      group.rotation.x = -Math.PI / 2.8;
+      group.rotation.x = -Math.PI / 2.6;
       this.heldItemSlot.add(group);
       this.torchLight.intensity = 0;
     } else if (itemId === 'torch') {
       const group = new THREE.Group();
-      const hGeo = new THREE.CylinderGeometry(0.05, 0.06, 0.75, 5);
+      const hGeo = new THREE.CylinderGeometry(0.045, 0.055, 0.75, 5);
       const hMat = new THREE.MeshStandardMaterial({ color: 0x633e1c, roughness: 0.9 });
       const hMesh = new THREE.Mesh(hGeo, hMat);
       hMesh.position.set(0, 0.2, 0);
       group.add(hMesh);
 
-      // Flame
       const fGeo = new THREE.DodecahedronGeometry(0.14, 0);
       const fMat = new THREE.MeshBasicMaterial({ color: 0xff8800 });
       const fMesh = new THREE.Mesh(fGeo, fMat);
@@ -348,7 +580,7 @@ export class Player {
       this.torchLight.intensity = 2.4;
     } else if (itemId === 'fishing_rod') {
       const group = new THREE.Group();
-      const rGeo = new THREE.CylinderGeometry(0.025, 0.045, 2.2, 5);
+      const rGeo = new THREE.CylinderGeometry(0.025, 0.04, 2.2, 5);
       const rMat = new THREE.MeshStandardMaterial({ color: 0x9c723b, roughness: 0.8 });
       const rMesh = new THREE.Mesh(rGeo, rMat);
       rMesh.position.set(0, 0.7, 0);
@@ -362,11 +594,12 @@ export class Player {
     }
   }
 
-  // --- Attack / Chop Animation Trigger ---
+  // --- Attack / Chop / Spear Thrust Trigger ---
   triggerSwing() {
     if (this.isSwinging) return;
     this.isSwinging = true;
     this.swingProgress = 0;
+    this.punchHand = 1 - this.punchHand; // Alternate punches
   }
 
   toggleViewMode() {
@@ -376,22 +609,18 @@ export class Player {
 
   updateViewMode() {
     if (this.viewMode === 'first_person') {
-      // In first-person: hide player head/torso so they don't clip the camera
       this.modelGroup.traverse(child => {
         if (child.isMesh && child !== this.heldItemSlot) {
           child.castShadow = true;
-          // Keep held weapon visible
           if (!this.heldItemSlot.children.some(c => c === child || c.getObjectById(child.id))) {
             child.visible = false;
           }
         }
       });
-      // Show arms and held item
-      if (this.bones.rightArmGroup) {
-        this.bones.rightArmGroup.traverse(c => { if (c.isMesh) c.visible = true; });
+      if (this.bones.rightUpperArm) {
+        this.bones.rightUpperArm.traverse(c => { if (c.isMesh) c.visible = true; });
       }
     } else {
-      // Third person: make all visible
       this.modelGroup.traverse(child => {
         if (child.isMesh) child.visible = true;
       });
@@ -403,19 +632,18 @@ export class Player {
     this.isSprinting = isSprint;
     this.isCrouching = isCrouch;
 
-    // Terrain height at player's horizontal coordinate
     const terrainY = this.islandWorld.getHeightAt(this.position.x, this.position.z);
     const waterLevel = 0.0;
 
-    // Determine water state
+    // Water states
     const waterDepth = waterLevel - this.position.y;
     this.isSwimming = waterDepth > 0.4;
-    this.isUnderwater = waterDepth > 1.6; // Head submerged
+    this.isUnderwater = waterDepth > 1.5;
 
-    // Movement speeds
+    // Speeds
     let currentSpeed = this.walkSpeed;
     if (this.isSwimming) {
-      currentSpeed = this.swimSpeed;
+      currentSpeed = this.isUnderwater ? this.swimSpeed * 1.15 : this.swimSpeed;
     } else if (this.isSprinting && !this.isCrouching) {
       currentSpeed = this.runSpeed;
     } else if (this.isCrouching) {
@@ -434,20 +662,26 @@ export class Player {
     this.velocity.x = moveDir.x * currentSpeed;
     this.velocity.z = moveDir.z * currentSpeed;
 
-    // Vertical Physics
+    // Swimming & Diving Vertical Physics
     if (this.isSwimming) {
-      // Buoyancy in water
       if (isJump) {
-        this.velocity.y = 3.5; // Swim up
+        this.velocity.y = 3.8; // Swim upward to surface
       } else if (isCrouch) {
-        this.velocity.y = -3.5; // Dive down
+        this.velocity.y = -3.8; // Dive down into deep
+      } else if (this.isUnderwater) {
+        // Diving follows camera pitch: looking down swims down!
+        if (moveDir.lengthSq() > 0.01) {
+          this.velocity.y = Math.sin(this.pitch) * currentSpeed;
+        } else {
+          this.velocity.y *= 0.9;
+        }
       } else {
-        // Float towards water surface gently
+        // Natural water surface buoyancy
         const targetY = waterLevel - 0.7;
-        this.velocity.y = (targetY - this.position.y) * 2.8;
+        this.velocity.y = (targetY - this.position.y) * 3.2;
       }
     } else {
-      // On land / in air
+      // Land Physics & Jump
       if (this.isGrounded) {
         if (isJump) {
           this.velocity.y = this.jumpForce;
@@ -465,136 +699,279 @@ export class Player {
     this.position.y += this.velocity.y * dt;
     this.position.z += this.velocity.z * dt;
 
-    // Ground collision resolution
+    // Ground collision resolution & Landing impact
+    this.wasGrounded = this.isGrounded;
     if (this.position.y <= terrainY) {
       this.position.y = terrainY;
       this.isGrounded = true;
       this.velocity.y = 0;
+      if (!this.wasGrounded && !this.isSwimming) {
+        // Just landed! Trigger soft knee flexion
+        this.landingTimer = 0.22;
+      }
     } else if (!this.isSwimming && (this.position.y - terrainY) > 0.2) {
       this.isGrounded = false;
     }
 
-    // Update Model Position & Orientation (Mini World dynamic turning)
+    if (this.landingTimer > 0) this.landingTimer -= dt;
+
+    // Underwater exhaled bubbles
+    if (this.isUnderwater) {
+      this.bubbleTimer += dt;
+      if (this.bubbleTimer >= 0.28) {
+        this.bubbleTimer = 0;
+        this.emitUnderwaterBubble();
+      }
+    }
+    this.updateUnderwaterBubbles(dt);
+
+    // Dynamic Character Body Orientation
     this.modelGroup.position.copy(this.position);
 
     if (this.viewMode === 'third_person') {
       if (this.isSwinging) {
-        // Face crosshair when attacking/mining/chopping
         this.targetBodyYaw = this.rotationY;
       } else if (moveDir.lengthSq() > 0.001) {
-        // Face movement direction when walking/running
         this.targetBodyYaw = Math.atan2(moveDir.x, moveDir.z);
       }
 
-      // Smooth angular interpolation
       let diff = (this.targetBodyYaw - this.currentBodyYaw + Math.PI) % (Math.PI * 2) - Math.PI;
       if (diff < -Math.PI) diff += Math.PI * 2;
       this.currentBodyYaw += diff * Math.min(1.0, dt * 14.0);
       this.modelGroup.rotation.y = this.currentBodyYaw;
     } else {
-      // First person: lock directly to view yaw
       this.modelGroup.rotation.y = this.rotationY;
       this.currentBodyYaw = this.rotationY;
       this.targetBodyYaw = this.rotationY;
     }
 
-    // Footstep Sound triggers
+    // Footsteps & Splashes
     const isMoving = moveDir.lengthSq() > 0.1;
     if (isMoving && this.isGrounded) {
-      this.stepTimer += dt * (this.isSprinting ? 2.4 : 1.5);
+      this.stepTimer += dt * (this.isSprinting ? 2.6 : 1.6);
       if (this.stepTimer >= 1.0) {
         this.stepTimer = 0;
         const surface = terrainY < 0.2 ? 'water' : 'sand';
         if (soundManager) soundManager.playFootstep(surface);
       }
-    } else if (isMoving && this.isSwimming) {
-      this.stepTimer += dt * 1.2;
+    } else if (isMoving && this.isSwimming && !this.isUnderwater) {
+      this.stepTimer += dt * 1.5;
       if (this.stepTimer >= 1.0) {
         this.stepTimer = 0;
         if (soundManager) soundManager.playSplash();
       }
     }
 
-    // Procedural Animation State Machine
-    this.animTime += dt * (this.isSprinting ? 12 : 7);
+    // ==========================================
+    // REALISTIC HUMAN SKELETAL ANIMATIONS
+    // ==========================================
+    this.animTime += dt * (this.isSprinting ? 12.5 : 7.2);
     const walkCycle = Math.sin(this.animTime);
+    const cosCycle = Math.cos(this.animTime);
+    const b = this.bones;
 
-    if (this.bones.leftLegGroup && this.bones.rightLegGroup) {
+    if (b.pelvis) {
+      // 1. SWIMMING & DIVING
       if (this.isSwimming) {
-        // Flutter kick
-        this.bones.leftLegGroup.rotation.x = Math.sin(this.animTime * 1.2) * 0.4;
-        this.bones.rightLegGroup.rotation.x = -Math.sin(this.animTime * 1.2) * 0.4;
-        this.bones.pelvis.rotation.x = Math.PI / 2.6; // Swim horizontal tilt
-      } else if (!this.isGrounded) {
-        // In air jump
-        this.bones.leftLegGroup.rotation.x = 0.4;
-        this.bones.rightLegGroup.rotation.x = -0.3;
-        this.bones.pelvis.rotation.x = 0;
-      } else if (isMoving) {
-        // Walk / run swing
-        const legAmp = this.isSprinting ? 0.75 : 0.45;
-        this.bones.leftLegGroup.rotation.x = walkCycle * legAmp;
-        this.bones.rightLegGroup.rotation.x = -walkCycle * legAmp;
-        this.bones.leftArmGroup.rotation.x = -walkCycle * legAmp * 0.8;
-        if (!this.isSwinging) {
-          this.bones.rightArmGroup.rotation.x = walkCycle * legAmp * 0.8;
+        if (this.isUnderwater) {
+          // Full 3D Diving: Tilts body towards diving pitch direction
+          b.pelvis.rotation.x = Math.PI / 2 + this.pitch * 0.75;
+          b.neckGroup.rotation.x = 0;
+        } else {
+          // Surface Swimming: Body horizontal, head elevated to breathe!
+          b.pelvis.rotation.x = Math.PI / 2.3;
+          b.neckGroup.rotation.x = -0.55;
         }
-        this.bones.pelvis.rotation.x = this.isSprinting ? 0.18 : 0;
-      } else {
-        // Idle breathing
-        this.bones.leftLegGroup.rotation.x = 0;
-        this.bones.rightLegGroup.rotation.x = 0;
-        this.bones.leftArmGroup.rotation.x = 0;
+
+        b.pelvis.position.y = 0.95;
+        b.torsoGroup.rotation.set(0, 0, 0);
+
+        // Fluid Flutter Kicks (Dual-jointed: Thigh + Knee flexion)
+        const kickL = Math.sin(this.animTime * 1.4);
+        b.leftThigh.rotation.x = kickL * 0.35;
+        b.leftKnee.rotation.x = Math.max(0, -kickL * 0.55);
+
+        b.rightThigh.rotation.x = -kickL * 0.35;
+        b.rightKnee.rotation.x = Math.max(0, kickL * 0.55);
+
+        // Freestyle / Breaststroke Arm Cycles
         if (!this.isSwinging) {
-          this.bones.rightArmGroup.rotation.x = 0;
+          const armStroke = Math.sin(this.animTime * 1.1);
+          b.leftUpperArm.rotation.x = armStroke * 1.4;
+          b.leftElbow.rotation.x = Math.max(0, Math.cos(this.animTime * 1.1) * 0.9);
+
+          b.rightUpperArm.rotation.x = -armStroke * 1.4;
+          b.rightElbow.rotation.x = Math.max(0, -Math.cos(this.animTime * 1.1) * 0.9);
         }
-        this.bones.pelvis.position.y = 0.95 + Math.sin(this.animTime * 0.3) * 0.02;
-        this.bones.pelvis.rotation.x = 0;
+      }
+      // 2. IN-AIR JUMPING & PARKOUR
+      else if (!this.isGrounded) {
+        b.pelvis.rotation.x = -0.15; // Arched back
+        b.pelvis.position.y = 0.95;
+        b.neckGroup.rotation.x = 0.1;
+
+        // Knees tucked up dynamically
+        b.leftThigh.rotation.x = -0.45;
+        b.leftKnee.rotation.x = 0.75; // Bent knee!
+
+        b.rightThigh.rotation.x = 0.3;
+        b.rightKnee.rotation.x = 0.4;
+
+        // Arms raised for aerodynamic balance
+        b.leftUpperArm.rotation.x = -0.6;
+        b.leftUpperArm.rotation.z = -0.4;
+        b.leftElbow.rotation.x = 0.5;
+
+        if (!this.isSwinging) {
+          b.rightUpperArm.rotation.x = -0.6;
+          b.rightUpperArm.rotation.z = 0.4;
+          b.rightElbow.rotation.x = 0.5;
+        }
+      }
+      // 3. RUNNING & WALKING LOCOMOTION
+      else if (isMoving) {
+        const isRun = this.isSprinting;
+        const amp = isRun ? 0.85 : 0.5;
+
+        // Forward torso lean & Pelvis vertical bounce
+        b.pelvis.rotation.x = isRun ? 0.24 : 0.08;
+        b.pelvis.position.y = 0.95 + Math.abs(Math.sin(this.animTime)) * (isRun ? 0.1 : 0.04);
+
+        // Torso counter-twist
+        b.torsoGroup.rotation.y = -walkCycle * (isRun ? 0.16 : 0.08);
+
+        // Dual-jointed Leg Kinematics:
+        // Left Leg: Thigh swings forward -> knee straightens; swings back -> knee bends back!
+        b.leftThigh.rotation.x = walkCycle * amp;
+        b.leftKnee.rotation.x = Math.max(0, -walkCycle * amp * 1.4);
+
+        // Right Leg: Inverse
+        b.rightThigh.rotation.x = -walkCycle * amp;
+        b.rightKnee.rotation.x = Math.max(0, walkCycle * amp * 1.4);
+
+        // Athletic Arm Pumping (Elbows bent at ~85° during run)
+        b.leftUpperArm.rotation.x = -walkCycle * amp * 0.9;
+        b.leftUpperArm.rotation.z = -0.18;
+        b.leftElbow.rotation.x = isRun ? 1.4 : 0.65; // Bent elbow!
+
+        if (!this.isSwinging) {
+          b.rightUpperArm.rotation.x = walkCycle * amp * 0.9;
+          b.rightUpperArm.rotation.z = 0.18;
+          b.rightElbow.rotation.x = isRun ? 1.4 : 0.65;
+        }
+
+        // Loincloth flap dynamic sway
+        if (b.loincloth) b.loincloth.rotation.x = -Math.abs(walkCycle) * 0.4;
+      }
+      // 4. NATURAL IDLE BREATHING & SOFT LANDING
+      else {
+        // Landing compression dampening
+        const landDrop = this.landingTimer > 0 ? (this.landingTimer / 0.22) * 0.14 : 0;
+        b.pelvis.position.y = 0.95 - landDrop + Math.sin(this.animTime * 0.35) * 0.02;
+        b.pelvis.rotation.set(landDrop * 0.8, 0, 0);
+
+        // Subtle breathing chest motion
+        b.torsoGroup.rotation.set(-landDrop * 0.5, 0, 0);
+        b.neckGroup.rotation.x = Math.sin(this.animTime * 0.35) * 0.02;
+
+        // Natural leg rest
+        b.leftThigh.rotation.x = landDrop * 0.6;
+        b.leftKnee.rotation.x = landDrop * 1.2;
+        b.rightThigh.rotation.x = landDrop * 0.6;
+        b.rightKnee.rotation.x = landDrop * 1.2;
+
+        // Natural arm rest by hips
+        b.leftUpperArm.rotation.set(0, 0, -0.15);
+        b.leftElbow.rotation.x = 0.3;
+
+        if (!this.isSwinging) {
+          b.rightUpperArm.rotation.set(0, 0, 0.15);
+          b.rightElbow.rotation.x = 0.3;
+        }
+        if (b.loincloth) b.loincloth.rotation.x = 0;
       }
     }
 
-    // Tool Swing / Chop Animation
+    // ==========================================
+    // REALISTIC HUNTING & WEAPON COMBAT
+    // ==========================================
     if (this.isSwinging) {
-      this.swingProgress += dt * 8.0;
+      const swingSpeed = this.equippedItemId === 'spear' ? 6.5 : (this.equippedItemId === 'pickaxe' ? 7.2 : 8.5);
+      this.swingProgress += dt * swingSpeed;
+
       if (this.swingProgress <= 1.0) {
-        // Arc: raise up, chop down, return
-        const swingArc = Math.sin(this.swingProgress * Math.PI);
-        this.bones.rightArmGroup.rotation.x = -Math.PI / 1.8 * swingArc;
-        this.bones.rightArmGroup.rotation.z = -0.3 * swingArc;
+        const prog = this.swingProgress;
+
+        // A. SPEAR HUNTING: Powerful Forward Thrust / Jab
+        if (this.equippedItemId === 'spear') {
+          if (prog < 0.3) {
+            // Phase 1: Draw back shoulder, raise spear level
+            const t = prog / 0.3;
+            b.rightUpperArm.rotation.set(-0.7 * t, 0, 0.2);
+            b.rightElbow.rotation.x = 1.2 * t;
+            b.torsoGroup.rotation.y = -0.3 * t;
+          } else if (prog < 0.65) {
+            // Phase 2: Explosive Forward Thrust
+            const t = (prog - 0.3) / 0.35;
+            b.rightUpperArm.rotation.set(-0.7 - 0.8 * t, 0, 0.1);
+            b.rightElbow.rotation.x = 1.2 - 1.1 * t; // Fully extend arm!
+            b.torsoGroup.rotation.y = -0.3 + 0.45 * t; // Lunge forward
+          } else {
+            // Phase 3: Smooth Recovery
+            const t = (prog - 0.65) / 0.35;
+            b.rightUpperArm.rotation.set(-1.5 * (1 - t), 0, 0.15);
+            b.rightElbow.rotation.x = 0.3 * t;
+            b.torsoGroup.rotation.y = 0.15 * (1 - t);
+          }
+        }
+        // B. PICKAXE / AXE: Heavy Two-Phase Overhead Smash
+        else if (this.equippedItemId === 'pickaxe' || this.equippedItemId === 'axe') {
+          const arc = Math.sin(prog * Math.PI);
+          b.rightUpperArm.rotation.x = -Math.PI / 1.7 * arc;
+          b.rightElbow.rotation.x = -0.5 * Math.sin(prog * Math.PI * 2);
+          b.torsoGroup.rotation.x = (prog < 0.5 ? -0.15 : 0.25) * arc;
+        }
+        // C. BARE HANDS: Alternating Boxing Punch Combo
+        else {
+          const punchArc = Math.sin(prog * Math.PI);
+          if (this.punchHand === 0) {
+            b.rightUpperArm.rotation.x = -1.4 * punchArc;
+            b.rightElbow.rotation.x = 0.1 * punchArc;
+            b.torsoGroup.rotation.y = 0.25 * punchArc;
+          } else {
+            b.leftUpperArm.rotation.x = -1.4 * punchArc;
+            b.leftElbow.rotation.x = 0.1 * punchArc;
+            b.torsoGroup.rotation.y = -0.25 * punchArc;
+          }
+        }
       } else {
         this.isSwinging = false;
         this.swingProgress = 0;
-        this.bones.rightArmGroup.rotation.x = 0;
-        this.bones.rightArmGroup.rotation.z = 0;
       }
     }
 
-    // Update Camera Position & Pitch
+    // Update Camera
     this.updateCamera(dt);
   }
 
+  // --- Mini World / Roblox Dynamic Orbit Follow Camera ---
   updateCamera(dt = 0.016) {
     const eyeHeight = this.isCrouching ? 1.15 : 1.7;
 
     if (this.viewMode === 'first_person') {
-      // First person: Camera directly at player's eye level
       this.camera.position.set(this.position.x, this.position.y + eyeHeight, this.position.z);
       this.camera.rotation.order = 'YXZ';
       this.camera.rotation.y = this.rotationY;
       this.camera.rotation.x = this.pitch;
     } else {
-      // Third person: Mini World / Minecraft / Roblox Dynamic Orbit Follow Camera
-      // Pivot is at player chest / neck level
       const pivot = new THREE.Vector3(this.position.x, this.position.y + 1.25, this.position.z);
       const camDist = 4.2;
 
-      // Spherical backward vector based on yaw and pitch
       const cosPitch = Math.cos(this.pitch);
       const sinPitch = Math.sin(this.pitch);
       const sinYaw = Math.sin(this.rotationY);
       const cosYaw = Math.cos(this.rotationY);
 
-      // Camera sits behind pivot with an elevated offset so character sits in lower screen
       const backDir = new THREE.Vector3(
         sinYaw * cosPitch,
         -sinPitch,
@@ -605,13 +982,11 @@ export class Player {
         .addScaledVector(backDir, camDist)
         .add(new THREE.Vector3(0, 0.95, 0));
 
-      // Prevent camera from clipping through terrain
       const tY = this.islandWorld.getHeightAt(targetCamPos.x, targetCamPos.z);
       if (targetCamPos.y < tY + 0.5) {
         targetCamPos.y = tY + 0.5;
       }
 
-      // Smooth dynamic follow inertia
       if (!this.hasInitializedCam) {
         this.smoothedCamPos.copy(targetCamPos);
         this.hasInitializedCam = true;
@@ -620,7 +995,6 @@ export class Player {
       }
       this.camera.position.copy(this.smoothedCamPos);
 
-      // Look Target: Forward line of sight with slight upward offset so crosshair (0,0) is completely clear above character's head
       const forwardDir = new THREE.Vector3(
         -sinYaw * cosPitch,
         sinPitch,
@@ -639,7 +1013,6 @@ export class Player {
   addRotation(deltaYaw, deltaPitch) {
     this.rotationY -= deltaYaw;
     this.pitch -= deltaPitch;
-    // Clamp pitch between looking straight up and straight down
     this.pitch = Math.max(-Math.PI / 2.1, Math.min(Math.PI / 2.1, this.pitch));
   }
 }
