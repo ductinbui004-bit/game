@@ -156,7 +156,8 @@ export class InteractionSystem {
     // Determine damage based on held weapon
     let damage = 20; // Bare fists
     if (activeDef) {
-      if (activeDef.id === 'axe') damage = 35;
+      if (activeDef.id === 'pickaxe') damage = 45;
+      else if (activeDef.id === 'axe') damage = 35;
       else if (activeDef.id === 'spear') damage = 50;
     }
 
@@ -183,7 +184,7 @@ export class InteractionSystem {
     // 2. Mine Rock
     else if (data.type === 'rock') {
       this.soundManager.playMine();
-      const mineDamage = activeDef && activeDef.id === 'axe' ? 40 : 25;
+      const mineDamage = activeDef && activeDef.id === 'pickaxe' ? 55 : (activeDef && activeDef.id === 'axe' ? 40 : 25);
       const destroyed = this.foliageManager.damageRock(data, mineDamage);
       if (destroyed) {
         this.gameState.notify('toast', { text: '🪨 Mỏm đá vỡ vụn! Bạn nhận được đá thô.', type: 'info' });
